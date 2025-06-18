@@ -12,3 +12,5 @@ else:
         print("Erfolgreich verbunden")
     except Exception as e:
         print("Verbindung fehlgeschlagen:", e)
+
+# Durch diesen Code kann man jetzt bei der Run Configuration die Variabel setzten
