@@ -7,10 +7,11 @@ import os
 class Power:
     def __init__(self, cpu=None, ram_total=None, ram_used=None, timestamp=None):
         if cpu is None or ram_total is None or ram_used is None or timestamp is None:
+            #cpu für eine sekunde beobachten
             self.cpu = psutil.cpu_percent(interval=1)
-            mem = psutil.virtual_memory()
-            self.ram_total = mem.total
-            self.ram_used = mem.used
+            virtual_mem = psutil.virtual_memory()
+            self.ram_total = virtual_mem.total
+            self.ram_used = virtual_mem.used
             self.timestamp = datetime.now()
         else:
             self.cpu = cpu
@@ -20,35 +21,41 @@ class Power:
 
     def to_dict(self):
         return {
-            "cpu": self.cpu,
+            "cpu_percent": self.cpu,
             "ram_total": self.ram_total,
             "ram_used": self.ram_used,
             "timestamp": self.timestamp
+            #umwandeln in dictionary, um besser in mongodb speichern zu können
         }
 
 def main():
     uri = os.getenv("MONGO_URI")
     if not uri:
-        print("MONGO_URI nicht gesetzt.")
+        print("Fehler: Umgebungsvariable nicht gesetzt.")
         return
 
     client = MongoClient(uri)
-    col = client["powerlogger"]["stats"]
+    db = client["system_monitor"]
+    collection = db["power_stats"]
 
-    print("Logger läuft...")
+    print("Starte Statistik")
 
     try:
         while True:
-            p = Power()
-            col.insert_one(p.to_dict())
-            count = col.count_documents({})
+            power = Power()
+            collection.insert_one(power.to_dict())
+
+            count = collection.count_documents({})
             if count > 10000:
-                diff = count - 10000
-                col.delete_many({}, sort=[("timestamp", 1)], limit=diff)
-            print(f"[{p.timestamp}] CPU: {p.cpu}% RAM: {p.ram_used // 1e6:.0f}/{p.ram_total // 1e6:.0f} MB")
+                zu_loeschen = collection.find({}, {"_id": 1}).sort("timestamp", 1).limit(count - 10000)
+                ids = [doc["_id"] for doc in zu_loeschen]
+                collection.delete_many({"_id": {"$in": ids}})
+
+            print(f"[{power.timestamp}] CPU: {power.cpu}% | RAM used: {power.ram_used / 1e9:.2f} GB / {power.ram_total / 1e9:.2f} GB")
             time.sleep(1)
     except KeyboardInterrupt:
-        print("Beendet.")
+        pass
 
 if __name__ == "__main__":
     main()
+
